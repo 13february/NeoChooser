@@ -47,5 +47,6 @@
 
 6. Нажмите CONTINUE, чтобы отправить выбранные фото дальше по workflow, или SKIP, если хотите просто продолжить без выбора.
 
-<img width="549" height="629" alt="image" src="https://github.com/user-attachments/assets/6ce2cb87-0e9b-4494-94d9-6055ecb26aba" />
+<img width="549" height="629" alt="image" src="https://github.com/user-attachments/assets/6ce2cb87-0e9b-4494-94d9-6055ecb26aba" /> <img width="569" height="238" alt="image" src="https://github.com/user-attachments/assets/7a0ec6c5-4ea2-4cd8-a5e0-9926e4d7d221" />
+
 <img width="432" height="273" alt="image" src="https://github.com/user-attachments/assets/dd160b42-14ef-492c-9c62-5f14cb76776f" />
