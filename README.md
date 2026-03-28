@@ -1,2 +1,52 @@
-# NeoChooser
-A stylish Image Chooser node for ComfyUI with neon UI and audio notifications.
+# ComfyUI Neo Image Chooser 👁️
+
+**Neo Image Chooser** — это узел для выбора изображений в ComfyUI, выполненный в приятном UI. Он позволяет останавливать рабочий процесс для выбора лучших кадров.
+
+![Preview](https://raw.githubusercontent.com/ВАШ_НИК/ComfyUI-NeoChooser/main/preview.png) *(Совет: добавь сюда скриншот ноды, когда зальешь на Гитхаб)*
+
+## 🚀 Основные возможности
+
+- **Audio Notifications**: Нода позовет вас звуковым сигналом, когда генерация дойдет до этапа выбора. Больше не нужно гипнотизировать монитор в ожидании.
+- **Smart Resizing**: 
+  - **Compact Mode**: Сжимается в тонкую аккуратную панель, чтобы не занимать место.
+  - **Preview Mode**: Расширяется для удобного просмотра и выбора нескольких изображений сразу.
+- **⚡ Quick Run**: После того как выбор сделан, кнопки управления заменяются на кнопку **RUN GENERATION**, позволяющую запустить новый цикл прямо из ноды, не возвращаясь к основному меню.
+- **Batch Control**: Кнопка **SKIP** для пропуска текущей пачки или **CANCEL** для полной остановки очереди.
+
+## 🛠 Установка
+
+### Через ComfyUI-Manager (Рекомендуется)
+1. Откройте **ComfyUI Manager**.
+2. Нажмите кнопку **"Install via Git URL"**.
+3. Вставьте ссылку на этот репозиторий: `https://github.com/ВАШ_НИК/ComfyUI-NeoChooser`
+4. Нажмите **OK** и перезагрузите ComfyUI.
+
+### Вручную
+1. Перейдите в папку `ComfyUI/custom_nodes/`.
+2. Клонируйте репозиторий:
+   ```bash
+   git clone [https://github.com/ВАШ_НИК/ComfyUI-NeoChooser.git](https://github.com/ВАШ_НИК/ComfyUI-NeoChooser.git)
+3. Перезагрузите ComfyUI.
+
+## 🎧 Настройка звуков
+Чтобы добавить любые звуки уведомлений, перейдите в папку: custom_nodes/ComfyUI-NeoChooser/web/sounds/
+Положите туда свои файлы в формате .mp3. Обновите страницу в браузере.
+
+Бесплатные звуки можно скачать здесь:
+
+[Mixkit Notification Sounds](https://mixkit.co/free-sound-effects/notification/) (Очень чистые и современные звуки).
+
+[Freesound.org](https://freesound.org/) (Огромная база, ищите по тегу "ping" или "notification").
+
+## 📖 Как пользоваться
+1. Добавьте ноду через меню: NeoNodes -> NeoChooser.
+
+2. Подключите выход IMAGE от вашего KSampler или VAE Decode к входу ноды.
+
+3. Запустите генерацию. 
+
+4. Когда процесс дойдет до NeoChooser, Генерация встанет на паузу.
+
+5. Кликните на изображения, которые хотите оставить. (Если изображение одно, оно выделится автоматом)
+
+6. Нажмите CONTINUE, чтобы отправить выбранные фото дальше по workflow, или SKIP, если хотите просто продолжить без выбора.
