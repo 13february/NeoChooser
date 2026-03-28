@@ -163,8 +163,8 @@ app.registerExtension({
                 const h = this.size[1];
                 const active = this.is_paused && (this.neo_images && this.neo_images.length > 0);
                 
-                // УМЕНЬШЕНО: padding 4 -> 2
-                const padding = 2; 
+                // УМЕНЬШЕНО: padding 4 -> 3
+                const padding = 3; 
 
                 const neonGreen = active ? "#00cc88" : "#335544";
                 const neonRed = active ? "#cc4444" : "#553333";
