@@ -88,11 +88,16 @@ app.registerExtension({
             node.neo_images = [];
             node.is_paused = true;
             if (data.images.length === 1) node.neo_selected.add(0);
-            if (node.sound_index > 0 && available_sounds.length > 1 && node.volume_index > 0) {
+            
+            // Читаем настройки из properties
+            const sIdx = node.properties.sound_index || 0;
+            const vIdx = node.properties.volume_index || 5;
+
+            if (sIdx > 0 && available_sounds.length > 1 && vIdx > 0) {
                 try {
-                    const soundFile = available_sounds[node.sound_index];
+                    const soundFile = available_sounds[sIdx];
                     const audio = new Audio(`/extensions/ComfyUI-NeoChooser/sounds/${soundFile}`);
-                    audio.volume = node.volume_index / 10;
+                    audio.volume = vIdx / 10;
                     audio.play().catch(e => {});
                 } catch (err) {}
             }
@@ -110,10 +115,9 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData.name === "NeoChooser") {
             
-            // ТЕПЕРЬ МЫ ВОЗВРАЩАЕМ ТОЛЬКО МИНИМАЛЬНЫЙ ПОЛ
             nodeType.prototype.computeSize = function() {
                 const minW = 250;
-                const minH = this.show_preview ? 250 : 150; 
+                const minH = this.properties.show_preview ? 250 : 150; 
                 return [minW, minH];
             };
 
@@ -121,10 +125,14 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated) onNodeCreated.apply(this, arguments);
                 this.title = "Neo Image Chooser 👁️";
-                this.sound_index = 0;
-                this.volume_index = 5; 
-                this.show_preview = true;
-                this.size = [350, 320];
+                
+                // Инициализируем свойства для сохранения
+                this.properties = this.properties || {};
+                this.properties.sound_index = this.properties.sound_index || 0;
+                this.properties.volume_index = this.properties.volume_index || 5; 
+                this.properties.show_preview = this.properties.show_preview !== undefined ? this.properties.show_preview : true;
+                
+                this.size = [350, this.properties.show_preview ? 320 : 150];
                 this.is_paused = false;
                 this.neo_images = [];
                 this.neo_selected = new Set();
@@ -154,7 +162,9 @@ app.registerExtension({
                 const w = this.size[0];
                 const h = this.size[1];
                 const active = this.is_paused && (this.neo_images && this.neo_images.length > 0);
-                const padding = 6; 
+                
+                // УМЕНЬШЕНО: padding 4 -> 2
+                const padding = 2; 
 
                 const neonGreen = active ? "#00cc88" : "#335544";
                 const neonRed = active ? "#cc4444" : "#553333";
@@ -170,8 +180,9 @@ app.registerExtension({
                 const volBoxW = 80; 
                 const gap = 12; 
                 
-                const trackBoxX = padding + 15;
-                const volBoxX = w - padding - 15 - volBoxW;
+                // УМЕНЬШЕНО: отступ контента 15 -> 8
+                const trackBoxX = padding + 8;
+                const volBoxX = w - padding - 8 - volBoxW;
                 const trackBoxW = Math.max(20, volBoxX - trackBoxX - gap);
 
                 drawCleanNeonRect(ctx, trackBoxX, controlsY, trackBoxW, boxH, 4, frameColor, 0, false);
@@ -186,7 +197,9 @@ app.registerExtension({
                     drawCleanNeonText(ctx, "<", trackBoxX + arrowBtnW/2, controlsY + boxH/2, idleColor, 14);
                     drawCleanNeonRect(ctx, this.btn_next_rect.x, controlsY, arrowBtnW, boxH, 4, "#14141a", 0, true);
                     drawCleanNeonText(ctx, ">", this.btn_next_rect.x + arrowBtnW/2, controlsY + boxH/2, idleColor, 14);
-                    let sName = available_sounds[this.sound_index] || "Loading...";
+                    
+                    // Используем свойство из properties
+                    let sName = available_sounds[this.properties.sound_index] || "Loading...";
                     drawCleanNeonText(ctx, sName, trackBoxX + trackBoxW/2, controlsY + boxH/2 + 1, neonGreen, 14, false, "center", trackBoxW - arrowBtnW * 2 - 10);
                 }
 
@@ -197,22 +210,24 @@ app.registerExtension({
                     const bh = 6 + (14 - 6) * ((i - 1) / 9);
                     const by = controlsY + (boxH - bh) / 2;
                     this.vol_bars_rects.push({ x: barX - 1, y: controlsY, w: 7, h: boxH, idx: i });
-                    ctx.fillStyle = (this.volume_index >= i) ? neonGreen : "#1a1a25";
+                    // Используем свойство из properties
+                    ctx.fillStyle = (this.properties.volume_index >= i) ? neonGreen : "#1a1a25";
                     ctx.fillRect(barX, by, 5, bh);
                 }
 
                 // ГАЛОЧКА
                 if (h > 120) {
                     const toggleY = controlsY + boxH + 12;
-                    this.toggle_preview_rect = { x: padding + 15, y: toggleY, w: 100, h: 14 };
-                    const toggleTxt = this.show_preview ? "☑ SHOW PREVIEW" : "☐ SHOW PREVIEW";
-                    drawCleanNeonText(ctx, toggleTxt, padding + 15, toggleY + 7, this.show_preview ? neonGreen : idleColor, 10, false, "left");
+                    // УМЕНЬШЕНО: 15 -> 8
+                    this.toggle_preview_rect = { x: padding + 8, y: toggleY, w: 100, h: 14 };
+                    const toggleTxt = this.properties.show_preview ? "☑ SHOW PREVIEW" : "☐ SHOW PREVIEW";
+                    drawCleanNeonText(ctx, toggleTxt, padding + 8, toggleY + 7, this.properties.show_preview ? neonGreen : idleColor, 10, false, "left");
                 } else {
                     this.toggle_preview_rect = null;
                 }
 
                 // ПРЕВЬЮ
-                if (this.show_preview && this.neo_images && this.neo_images.length > 0) {
+                if (this.properties.show_preview && this.neo_images && this.neo_images.length > 0) {
                     const toggleY = controlsY + boxH + 12;
                     let startY = (h < 130) ? toggleY + 10 : toggleY + 22;
                     let bottomPadding = 60;
@@ -221,7 +236,7 @@ app.registerExtension({
                         const count = this.neo_images.length;
                         const cols = Math.ceil(Math.sqrt(count));
                         const rows = Math.ceil(count / cols);
-                        const cellW = (w - padding * 2 - 30) / cols;
+                        const cellW = (w - padding * 2 - 16) / cols; // Скорректировано под новые отступы
                         const cellH = availableH / rows;
                         this.image_rects = [];
                         this.neo_images.forEach((imgObj, i) => {
@@ -230,7 +245,8 @@ app.registerExtension({
                             const ratio = Math.min((cellW - 6) / img.width, (cellH - 6) / img.height);
                             const drawW = img.width * ratio;
                             const drawH = img.height * ratio;
-                            const drawX = padding + 15 + (i % cols) * cellW + (cellW - drawW) / 2;
+                            // УМЕНЬШЕНО: 15 -> 8
+                            const drawX = padding + 8 + (i % cols) * cellW + (cellW - drawW) / 2;
                             const drawY = startY + Math.floor(i / cols) * cellH + (cellH - drawH) / 2;
                             this.image_rects.push({ x: drawX, y: drawY, w: drawW, h: drawH, idx: i });
                             drawCleanNeonRect(ctx, drawX - 1, drawY - 1, drawW + 2, drawH + 2, 2, "#333345", 2);
@@ -246,13 +262,14 @@ app.registerExtension({
 
                 // КНОПКИ
                 const btnH = (h < 130) ? 24 : 30;
-                const sideMargin = 15;
+                // УМЕНЬШЕНО: 15 -> 8
+                const sideMargin = 8;
                 const btnY = h - padding - btnH - 12; 
                 
                 if (active) {
-                    const btnW = (w - padding * 2 - sideMargin * 2 - 15) / 2;
+                    const btnW = (w - padding * 2 - sideMargin * 2 - 10) / 2;
                     this.btn_cancel_rect = { x: padding + sideMargin, y: btnY, w: btnW, h: btnH };
-                    this.btn_continue_rect = { x: padding + sideMargin + btnW + 15, y: btnY, w: btnW, h: btnH };
+                    this.btn_continue_rect = { x: padding + sideMargin + btnW + 10, y: btnY, w: btnW, h: btnH };
                     this.btn_run_rect = null;
 
                     drawCleanNeonRect(ctx, this.btn_cancel_rect.x, btnY, btnW, btnH, 15, "#181111", 0, true);
@@ -278,26 +295,28 @@ app.registerExtension({
             const onMouseDown = nodeType.prototype.onMouseDown;
             nodeType.prototype.onMouseDown = function (e, pos) {
                 const clickX = pos[0]; const clickY = pos[1];
+                
+                // Обработка кликов с записью в properties
                 if (this.toggle_preview_rect && clickX >= this.toggle_preview_rect.x && clickX <= this.toggle_preview_rect.x + this.toggle_preview_rect.w &&
                     clickY >= this.toggle_preview_rect.y && clickY <= this.toggle_preview_rect.y + this.toggle_preview_rect.h) {
-                    this.show_preview = !this.show_preview;
-                    this.size[1] = this.show_preview ? 320 : 150;
+                    this.properties.show_preview = !this.properties.show_preview;
+                    this.size[1] = this.properties.show_preview ? 320 : 150;
                     this.setDirtyCanvas(true, true);
                     return true;
                 }
                 if (this.btn_prev_rect && clickX >= this.btn_prev_rect.x && clickX <= this.btn_prev_rect.x + this.btn_prev_rect.w &&
                     clickY >= this.btn_prev_rect.y && clickY <= this.btn_prev_rect.y + this.btn_prev_rect.h) {
-                    this.sound_index = (this.sound_index - 1 + available_sounds.length) % available_sounds.length;
+                    this.properties.sound_index = (this.properties.sound_index - 1 + available_sounds.length) % available_sounds.length;
                     this.setDirtyCanvas(true); return true;
                 }
                 if (this.btn_next_rect && clickX >= this.btn_next_rect.x && clickX <= this.btn_next_rect.x + this.btn_next_rect.w &&
                     clickY >= this.btn_next_rect.y && clickY <= this.btn_next_rect.y + this.btn_next_rect.h) {
-                    this.sound_index = (this.sound_index + 1) % available_sounds.length;
+                    this.properties.sound_index = (this.properties.sound_index + 1) % available_sounds.length;
                     this.setDirtyCanvas(true); return true;
                 }
                 for (let bar of (this.vol_bars_rects || [])) {
                     if (clickX >= bar.x && clickX <= bar.x + bar.w && clickY >= bar.y && clickY <= bar.y + bar.h) {
-                        this.volume_index = bar.idx; this.setDirtyCanvas(true); return true;
+                        this.properties.volume_index = bar.idx; this.setDirtyCanvas(true); return true;
                     }
                 }
                 if (this.btn_run_rect && clickX >= this.btn_run_rect.x && clickX <= this.btn_run_rect.x + this.btn_run_rect.w &&
