@@ -125,6 +125,8 @@ app.registerExtension({
                 display: flex; justify-content: center; align-items: center; 
                 font-size: 50px; animation: neo-glow-pulse 8s infinite ease-in-out;
                 font-weight: bold; font-variant-numeric: tabular-nums;
+                transform: translateY(-8px); 
+                line-height: 1;
             }
             .neo-timer-display.is-paused { animation: neo-glow-pulse 8s infinite ease-in-out, neo-pause-blink 2s infinite ease-in-out; }
         `;
