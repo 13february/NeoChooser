@@ -1,6 +1,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
+// --- Global Timer & Speed Manager ---
 const GlobalTimer = {
     startTime: 0,
     accumulatedTime: 0, 
@@ -8,6 +9,11 @@ const GlobalTimer = {
     isRunning: false,
     isPaused: false,
     activeNodes: new Set(),
+    
+    // Данные для расчета скорости
+    progressNodeId: null,
+    progressStartTime: 0,
+    progressStartStep: 0,
 
     formatTime(ms) {
         if (ms < 0) ms = 0;
@@ -21,12 +27,15 @@ const GlobalTimer = {
         this.isPaused = false;
         this.accumulatedTime = 0;
         this.startTime = Date.now();
+        this.progressNodeId = null; 
+        
         this.activeNodes.forEach(node => {
             if (node.timerDisplay) {
                 node.timerDisplay.style.setProperty('--text-color', '#0099ff');
                 node.timerDisplay.style.setProperty('--glow-color', '#0099ff');
                 node.timerDisplay.classList.remove('is-paused');
             }
+            if (node.speedDisplay) node.speedDisplay.textContent = "";
         });
         this._runInterval();
     },
@@ -68,6 +77,7 @@ const GlobalTimer = {
         clearInterval(this.intervalId);
         const finalTime = this.isPaused ? this.accumulatedTime : (this.accumulatedTime + (Date.now() - this.startTime));
         const finalTimeString = this.formatTime(finalTime);
+        
         this.activeNodes.forEach(node => {
             if (node.timerDisplay) {
                 node.timerDisplay.textContent = finalTimeString;
@@ -75,6 +85,7 @@ const GlobalTimer = {
                 node.timerDisplay.style.setProperty('--glow-color', '#7300ff');
                 node.timerDisplay.classList.remove('is-paused');
             }
+            if (node.speedDisplay) node.speedDisplay.textContent = ""; 
             node.properties.elapsed_time_str = finalTimeString;
         });
         this.isRunning = false;
@@ -91,7 +102,7 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 this.bgcolor = "#000000";
                 this.color = "#000000";
-                this.title = "Neo Timer ⚡";
+                this.title = "Neo_Timer"; 
                 this.properties = this.properties || {};
                 this.size = [300, 100];
 
@@ -102,7 +113,13 @@ app.registerExtension({
                 this.timerDisplay.className = "neo-timer-display";
                 this.timerDisplay.textContent = this.properties.elapsed_time_str || "00:00";
                 
+                this.speedDisplay = document.createElement("div");
+                this.speedDisplay.className = "neo-speed-display";
+                this.speedDisplay.textContent = "";
+                
                 container.appendChild(this.timerDisplay);
+                container.appendChild(this.speedDisplay);
+                
                 this.addDOMWidget("neoTimer", "Neo Timer", container, { serialize: false });
                 GlobalTimer.registerNode(this);
             };
@@ -118,6 +135,7 @@ app.registerExtension({
         style.innerText = `
             @keyframes neo-glow-pulse { 0%, 100% { text-shadow: 0 0 15px var(--glow-color); } 50% { text-shadow: 0 0 25px var(--glow-color); } }
             @keyframes neo-pause-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+            
             .neo-timer-display {
                 text-align: center; width: 100%; height: 100%; position: absolute;
                 top: 0; left: 0; color: var(--text-color);
@@ -128,7 +146,20 @@ app.registerExtension({
                 transform: translateY(-8px); 
                 line-height: 1;
             }
-            .neo-timer-display.is-paused { animation: neo-glow-pulse 8s infinite ease-in-out, neo-pause-blink 2s infinite ease-in-out; }
+            
+            .neo-speed-display {
+                position: absolute; width: 100%; text-align: center;
+                bottom: 10px; left: 0;
+                font-family: 'Orbitron', sans-serif;
+                font-size: 13px; color: var(--text-color);
+                opacity: 0.7; font-weight: bold;
+                text-shadow: 0 0 5px var(--glow-color);
+                letter-spacing: 0.05em;
+            }
+
+            .neo-timer-display.is-paused { 
+                animation: neo-glow-pulse 8s infinite ease-in-out, neo-pause-blink 2s infinite ease-in-out; 
+            }
         `;
         document.head.appendChild(style);
 
@@ -137,6 +168,32 @@ app.registerExtension({
             if (detail === null) GlobalTimer.stop();
             else if (GlobalTimer.isPaused) GlobalTimer.resume();
         });
+
+        api.addEventListener("progress", ({ detail }) => {
+            const { value, max, node } = detail;
+            const now = Date.now();
+
+            if (GlobalTimer.progressNodeId !== node) {
+                GlobalTimer.progressNodeId = node;
+                GlobalTimer.progressStartTime = now;
+                GlobalTimer.progressStartStep = value;
+                return;
+            }
+
+            const elapsed = (now - GlobalTimer.progressStartTime) / 1000;
+            if (elapsed <= 0.5) return; 
+
+            const stepsDone = value - GlobalTimer.progressStartStep;
+            if (stepsDone <= 0) return;
+
+            const it_s = stepsDone / elapsed;
+            let speedText = it_s >= 1 ? `${it_s.toFixed(2)} it/s` : `${(1 / it_s).toFixed(2)} s/it`;
+
+            GlobalTimer.activeNodes.forEach(n => {
+                if (n.speedDisplay) n.speedDisplay.textContent = speedText;
+            });
+        });
+
         api.addEventListener("neo_chooser_show", () => GlobalTimer.pause());
         api.addEventListener("execution_error", () => GlobalTimer.stop());
         api.addEventListener("execution_interrupted", () => GlobalTimer.stop());

@@ -96,7 +96,7 @@ app.registerExtension({
             if (sIdx > 0 && available_sounds.length > 1 && vIdx > 0) {
                 try {
                     const soundFile = available_sounds[sIdx];
-                    const audio = new Audio(`/extensions/ComfyUI-NeoChooser/sounds/${soundFile}`);
+                    const audio = new Audio(`/extensions/NeoChooser/sounds/${soundFile}`);
                     audio.volume = vIdx / 10;
                     audio.play().catch(e => {});
                 } catch (err) {}
