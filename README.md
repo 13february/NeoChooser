@@ -2,7 +2,8 @@
 
 **Neo Image Chooser** — это узел для выбора изображений в ComfyUI, выполненный в приятном UI. Он позволяет останавливать рабочий процесс для выбора лучших кадров.
 
-![Preview](https://raw.githubusercontent.com/ВАШ_НИК/ComfyUI-NeoChooser/main/preview.png) *(Совет: добавь сюда скриншот ноды, когда зальешь на Гитхаб)*
+<img width="898" height="522" alt="image" src="https://github.com/user-attachments/assets/e6588444-6bea-4ef2-85cb-d93230c9f245" />
+
 
 ## 🚀 Основные возможности
 
@@ -50,3 +51,6 @@
 5. Кликните на изображения, которые хотите оставить. (Если изображение одно, оно выделится автоматом)
 
 6. Нажмите CONTINUE, чтобы отправить выбранные фото дальше по workflow, или SKIP, если хотите просто продолжить без выбора.
+
+<img width="549" height="629" alt="image" src="https://github.com/user-attachments/assets/6ce2cb87-0e9b-4494-94d9-6055ecb26aba" />
+<img width="432" height="273" alt="image" src="https://github.com/user-attachments/assets/dd160b42-14ef-492c-9c62-5f14cb76776f" />
