@@ -22,7 +22,7 @@ async def get_sounds(request):
     if not os.path.exists(sound_dir):
         os.makedirs(sound_dir)
         return web.json_response([])
-    files = [f for f in os.listdir(sound_dir) if f.lower().endswith('.mp3')]
+    files = [f for f in os.listdir(sound_dir) if f.lower().endswith(('.mp3', '.wav'))]
     files.sort()
     return web.json_response(files)
 
