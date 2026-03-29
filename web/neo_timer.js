@@ -10,10 +10,8 @@ const GlobalTimer = {
     isPaused: false,
     activeNodes: new Set(),
     
-    // Данные для расчета скорости
-    progressNodeId: null,
-    progressStartTime: 0,
-    progressStartStep: 0,
+    // Данные для расчета скорости (теперь через Map для точности)
+    nodeStartTimes: new Map(),
 
     formatTime(ms) {
         if (ms < 0) ms = 0;
@@ -27,14 +25,15 @@ const GlobalTimer = {
         this.isPaused = false;
         this.accumulatedTime = 0;
         this.startTime = Date.now();
-        this.progressNodeId = null; 
+        this.nodeStartTimes.clear(); 
         
         this.activeNodes.forEach(node => {
-            if (node.timerDisplay) {
-                node.timerDisplay.style.setProperty('--text-color', '#0099ff');
-                node.timerDisplay.style.setProperty('--glow-color', '#0099ff');
-                node.timerDisplay.classList.remove('is-paused');
+            if (node.mainContainer) {
+                // Красим весь контейнер, чтобы и таймер, и скорость были одного цвета
+                node.mainContainer.style.setProperty('--text-color', '#0099ff');
+                node.mainContainer.style.setProperty('--glow-color', '#0099ff');
             }
+            if (node.timerDisplay) node.timerDisplay.classList.remove('is-paused');
             if (node.speedDisplay) node.speedDisplay.textContent = "";
         });
         this._runInterval();
@@ -79,10 +78,13 @@ const GlobalTimer = {
         const finalTimeString = this.formatTime(finalTime);
         
         this.activeNodes.forEach(node => {
+            if (node.mainContainer) {
+                // Возвращаем дефолтный фиолетовый после завершения
+                node.mainContainer.style.setProperty('--text-color', '#7300ff');
+                node.mainContainer.style.setProperty('--glow-color', '#7300ff');
+            }
             if (node.timerDisplay) {
                 node.timerDisplay.textContent = finalTimeString;
-                node.timerDisplay.style.setProperty('--text-color', '#7300ff');
-                node.timerDisplay.style.setProperty('--glow-color', '#7300ff');
                 node.timerDisplay.classList.remove('is-paused');
             }
             if (node.speedDisplay) node.speedDisplay.textContent = ""; 
@@ -90,6 +92,7 @@ const GlobalTimer = {
         });
         this.isRunning = false;
         this.isPaused = false;
+        this.nodeStartTimes.clear();
     },
     registerNode(node) { this.activeNodes.add(node); },
     unregisterNode(node) { this.activeNodes.delete(node); },
@@ -108,6 +111,7 @@ app.registerExtension({
 
                 const container = document.createElement("div");
                 container.style.cssText = `width: 100%; height: 100%; position: relative; --text-color: #7300ff; --glow-color: #7300ff;`;
+                this.mainContainer = container; // Сохраняем ссылку для GlobalTimer
 
                 this.timerDisplay = document.createElement("div");
                 this.timerDisplay.className = "neo-timer-display";
@@ -143,7 +147,7 @@ app.registerExtension({
                 display: flex; justify-content: center; align-items: center; 
                 font-size: 50px; animation: neo-glow-pulse 8s infinite ease-in-out;
                 font-weight: bold; font-variant-numeric: tabular-nums;
-                transform: translateY(-8px); 
+                transform: translateY(-13px); 
                 line-height: 1;
             }
             
@@ -152,7 +156,7 @@ app.registerExtension({
                 bottom: 10px; left: 0;
                 font-family: 'Orbitron', sans-serif;
                 font-size: 13px; color: var(--text-color);
-                opacity: 0.7; font-weight: bold;
+                opacity: 0.8; font-weight: bold;
                 text-shadow: 0 0 5px var(--glow-color);
                 letter-spacing: 0.05em;
             }
@@ -164,29 +168,31 @@ app.registerExtension({
         document.head.appendChild(style);
 
         api.addEventListener("execution_start", () => GlobalTimer.start());
+        
         api.addEventListener("executing", ({ detail }) => {
-            if (detail === null) GlobalTimer.stop();
-            else if (GlobalTimer.isPaused) GlobalTimer.resume();
+            if (detail === null) {
+                GlobalTimer.stop();
+            } else {
+                if (GlobalTimer.isPaused) GlobalTimer.resume();
+                // Запоминаем время начала работы конкретной ноды
+                GlobalTimer.nodeStartTimes.set(detail, Date.now());
+            }
         });
 
         api.addEventListener("progress", ({ detail }) => {
             const { value, max, node } = detail;
+            const nodeStartTime = GlobalTimer.nodeStartTimes.get(node);
+            
+            if (!nodeStartTime) return; 
+
             const now = Date.now();
+            const elapsed = (now - nodeStartTime) / 1000;
+            if (elapsed <= 0) return;
 
-            if (GlobalTimer.progressNodeId !== node) {
-                GlobalTimer.progressNodeId = node;
-                GlobalTimer.progressStartTime = now;
-                GlobalTimer.progressStartStep = value;
-                return;
-            }
+            // Расчет итераций в секунду
+            const it_s = value / elapsed;
+            if (it_s <= 0) return;
 
-            const elapsed = (now - GlobalTimer.progressStartTime) / 1000;
-            if (elapsed <= 0.5) return; 
-
-            const stepsDone = value - GlobalTimer.progressStartStep;
-            if (stepsDone <= 0) return;
-
-            const it_s = stepsDone / elapsed;
             let speedText = it_s >= 1 ? `${it_s.toFixed(2)} it/s` : `${(1 / it_s).toFixed(2)} s/it`;
 
             GlobalTimer.activeNodes.forEach(n => {
