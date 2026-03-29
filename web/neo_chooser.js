@@ -2,7 +2,23 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 let available_sounds = ["# No Sound"];
+let sounds_loaded = false; 
 let isQueueActive = false;
+
+async function ensureSoundsLoaded(nodeToUpdate = null) {
+    if (sounds_loaded && available_sounds.length > 1) return;
+    try {
+        const r = await api.fetchApi("/neo_chooser/sounds");
+        if (r.ok) {
+            const files = await r.json();
+            if (files && files.length > 0) {
+                available_sounds = ["# No Sound", ...files];
+            }
+        }
+        sounds_loaded = true;
+        if (nodeToUpdate) nodeToUpdate.setDirtyCanvas(true, false);
+    } catch (e) {}
+}
 
 if (!document.querySelector('link[href*="Rajdhani"]')) {
     const fontLink = document.createElement("link");
@@ -31,14 +47,11 @@ function drawCleanNeonText(ctx, text, x, y, color, size, isBold = false, textAli
     ctx.font = `${isBold ? "700" : "500"} ${size}px 'Rajdhani', sans-serif`;
     ctx.textAlign = textAlign; 
     ctx.textBaseline = "middle";
-    
     ctx.shadowOffsetX = 0; 
     ctx.shadowOffsetY = 0; 
-    
     ctx.fillStyle = color; 
     ctx.shadowColor = color; 
     ctx.shadowBlur = 4;
-    
     let t = (maxWidth && ctx.measureText(text).width > maxWidth) ? text.slice(0, -3) + "..." : text;
     ctx.fillText(t, x, y); 
     ctx.shadowBlur = 0; 
@@ -49,10 +62,8 @@ function drawCleanNeonText(ctx, text, x, y, color, size, isBold = false, textAli
 function drawCleanNeonRect(ctx, x, y, w, h, radius, color, blur = 0, isFill = false) {
     ctx.save(); 
     safeRoundRect(ctx, x, y, w, h, radius);
-    
     ctx.shadowOffsetX = 0; 
     ctx.shadowOffsetY = 0; 
-
     if (isFill) { 
         ctx.fillStyle = color; 
         ctx.fill(); 
@@ -71,25 +82,36 @@ function drawCleanNeonRect(ctx, x, y, w, h, radius, color, blur = 0, isFill = fa
 app.registerExtension({
     name: "Neo.ImageChooser.Polished",
     async setup() {
-        try { 
-            const r = await api.fetchApi("/neo_chooser/sounds"); 
-            available_sounds = ["# No Sound", ...await r.json()]; 
-        } catch (e) {}
+        await ensureSoundsLoaded();
 
-        const reset = () => { 
-            isQueueActive = false; 
-            app.graph._nodes.forEach(n => { 
-                if (n.type === "NeoChooser") { 
-                    n.is_paused = false; 
-                    n.neo_images = []; 
-                    n.setDirtyCanvas(true); 
-                } 
-            }); 
+        const resetAllChoosers = () => {
+            app.graph._nodes.forEach(n => {
+                if (n.type === "NeoChooser") {
+                    n.properties.neo_chooser_state = null; // Подчищаем следы
+                    n.is_paused = false;
+                    n.neo_images = [];
+                    n.setDirtyCanvas(true);
+                }
+            });
         };
 
+        // Сбрасываем старые состояния только при старте новой генерации или ошибке
         api.addEventListener("execution_start", () => { 
             isQueueActive = true; 
-            app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
+            resetAllChoosers(); 
+        });
+        
+        api.addEventListener("execution_interrupted", () => { isQueueActive = false; resetAllChoosers(); }); 
+        api.addEventListener("execution_error", () => { isQueueActive = false; resetAllChoosers(); });
+        
+        api.addEventListener("executing", ({ detail }) => { 
+            if (detail === null) {
+                isQueueActive = false; 
+                app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); });
+            } else { 
+                isQueueActive = true; 
+                app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
+            } 
         });
 
         api.addEventListener("neo_chooser_show", (e) => {
@@ -97,34 +119,22 @@ app.registerExtension({
             const n = app.graph.getNodeById(e.detail.node_id); 
             if (!n) return;
 
-            n.neo_selected = new Set(); 
-            n.neo_images = []; 
-            n.is_paused = true;
-            if (e.detail.images.length === 1) n.neo_selected.add(0);
+            // Нативно сохраняем статус в properties ноды (переживет любые вкладки)
+            n.properties.neo_chooser_state = {
+                is_paused: true,
+                images: e.detail.images,
+                selected: e.detail.images.length === 1 ? [0] : []
+            };
 
-            if (n.properties.sound_index > 0 && n.properties.volume_index > 0) {
-                const a = new Audio(`/extensions/NeoChooser/sounds/${available_sounds[n.properties.sound_index]}`);
-                a.volume = n.properties.volume_index / 10; 
+            const sIdx = n.properties.sound_index ?? 0;
+            const vIdx = n.properties.volume_index ?? 5;
+            if (sIdx > 0 && available_sounds.length > 1 && vIdx > 0) {
+                const a = new Audio(`/extensions/NeoChooser/sounds/${available_sounds[sIdx]}`);
+                a.volume = vIdx / 10; 
                 a.play().catch(()=>{});
             }
 
-            e.detail.images.forEach((img, i) => { 
-                const obj = new Image(); 
-                obj.onload = () => n.setDirtyCanvas(true); 
-                obj.src = `/view?filename=${img.filename}&type=${img.type}&subfolder=${img.subfolder}`; 
-                n.neo_images.push({ img: obj, idx: i }); 
-            });
-            n.setDirtyCanvas(true);
-        });
-
-        api.addEventListener("execution_interrupted", reset); 
-        api.addEventListener("execution_error", reset);
-        api.addEventListener("executing", ({ detail }) => { 
-            if (detail === null) reset(); 
-            else { 
-                isQueueActive = true; 
-                app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
-            } 
+            n.restoreStateFromProperties();
         });
     },
 
@@ -133,20 +143,61 @@ app.registerExtension({
             
             nodeType.prototype.onNodeCreated = function () {
                 this.title = "Neo Image Chooser 👁️"; 
-                this.properties = this.properties || { sound_index: 0, volume_index: 5, show_preview: true };
+                this.properties = this.properties || {};
+                this.properties.sound_index = this.properties.sound_index ?? 0;
+                this.properties.volume_index = this.properties.volume_index ?? 5;
+                this.properties.show_preview = this.properties.show_preview ?? true;
+                this.properties.neo_chooser_state = null; // Контейнер для сериализации паузы
+                
                 this.size = [350, 320]; 
                 this.is_paused = false; 
                 this.neo_images = []; 
                 this.neo_selected = new Set(); 
                 this.last_click_time = 0;
+                this.last_draw_time = 0; 
+                
+                ensureSoundsLoaded(this); 
+            };
+
+            // Метод восстановления из нативного JSON ComfyUI
+            nodeType.prototype.restoreStateFromProperties = function() {
+                const state = this.properties.neo_chooser_state;
+                if (!state || !state.is_paused) {
+                    this.is_paused = false;
+                    this.neo_images = [];
+                    return;
+                }
+
+                this.is_paused = true;
+                this.neo_selected = new Set(state.selected || []);
+                this.neo_images = [];
+
+                state.images.forEach((img, i) => {
+                    const obj = new Image();
+                    obj.onload = () => this.setDirtyCanvas(true);
+                    const params = new URLSearchParams({ filename: img.filename, type: img.type, subfolder: img.subfolder });
+                    obj.src = `/view?${params.toString()}`;
+                    this.neo_images.push({ img: obj, idx: i });
+                });
+                this.setDirtyCanvas(true);
+            };
+
+            // Хук ComfyUI: срабатывает при загрузке графа и возврате на вкладку
+            const onConfigure = nodeType.prototype.onConfigure;
+            nodeType.prototype.onConfigure = function (info) {
+                if (onConfigure) onConfigure.apply(this, arguments);
+                this.restoreStateFromProperties();
             };
 
             nodeType.prototype.sendReply = async function(action) {
                 this.is_paused = false; 
+                const selectedArr = Array.from(this.neo_selected);
+                this.properties.neo_chooser_state = null; // Очищаем статус после выбора
+                
                 if (action === "cancel") api.interrupt();
                 await api.fetchApi("/neo_chooser/reply", { 
                     method: "POST", 
-                    body: JSON.stringify({ node_id: String(this.id), action, selected: Array.from(this.neo_selected) }) 
+                    body: JSON.stringify({ node_id: String(this.id), action, selected: selectedArr }) 
                 });
                 this.setDirtyCanvas(true);
             };
@@ -156,11 +207,14 @@ app.registerExtension({
                 
                 const [w, h] = this.size; 
                 const active = this.is_paused && this.neo_images.length > 0; 
-                
                 const padding = 3; 
+                
+                const sIdx = this.properties.sound_index ?? 0;
+                const vIdx = this.properties.volume_index ?? 5;
+                const showPreview = this.properties.show_preview ?? true;
+
                 drawCleanNeonRect(ctx, padding, padding, w - padding*2, h - padding*2, 6, "#0b0b0e", 0, true);
 
-                // --- ЗВУКОВАЯ ПАНЕЛЬ ---
                 const cY = (h < 130) ? padding + 22 : padding + 35; 
                 const bH = 26; 
                 const vW = 80; 
@@ -177,23 +231,23 @@ app.registerExtension({
                 drawCleanNeonText(ctx, "◀", tX + 12, cY + bH/2 + 1, "#777788", 12);
                 drawCleanNeonText(ctx, "▶", tX + tW - 12, cY + bH/2 + 1, "#777788", 12);
                 
-                drawCleanNeonText(ctx, available_sounds[this.properties.sound_index] || "...", tX + tW/2, cY + bH/2 + 1, "#00cc88", 14, false, "center", tW - 60);
+                const trackName = available_sounds[sIdx] || available_sounds[0] || "Loading...";
+                drawCleanNeonText(ctx, trackName, tX + tW/2, cY + bH/2 + 1, "#00cc88", 14, false, "center", tW - 60);
                 
                 this.vol_bars_rects = [];
                 for (let i = 1; i <= 10; i++) {
                     const bx = vX + 6 + (i-1)*7; 
                     const bh = 6 + (14-6)*((i-1)/9);
                     this.vol_bars_rects.push({ x: bx-1, y: cY, w: 7, h: bH, idx: i });
-                    ctx.fillStyle = (this.properties.volume_index >= i) ? "#00cc88" : "#1a1a25";
+                    ctx.fillStyle = (vIdx >= i) ? "#00cc88" : "#1a1a25";
                     ctx.fillRect(bx, cY + (bH-bh)/2, 5, bh);
                 }
 
-                // --- ПРЕВЬЮ ---
                 const togY = cY + bH + 12; 
                 this.toggle_preview_rect = { x: padding + 8, y: togY, w: 100, h: 14 };
-                drawCleanNeonText(ctx, (this.properties.show_preview ? "☑" : "☐") + " SHOW PREVIEW", padding+8, togY+7, this.properties.show_preview ? "#00cc88" : "#777788", 10, false, "left");
+                drawCleanNeonText(ctx, (showPreview ? "☑" : "☐") + " SHOW PREVIEW", padding+8, togY+7, showPreview ? "#00cc88" : "#777788", 10, false, "left");
                 
-                if (this.properties.show_preview && this.neo_images.length > 0) {
+                if (showPreview && this.neo_images.length > 0) {
                     const sY = (h < 130) ? togY + 10 : togY + 22; 
                     const avH = h - padding - sY - 60;
                     if (avH > 20) {
@@ -224,14 +278,12 @@ app.registerExtension({
                     }
                 }
 
-                // --- КНОПКИ УПРАВЛЕНИЯ ---
                 const btnH = (h < 130) ? 24 : 30; 
                 const btnY = h - padding - btnH - 12;
                 const textYOffset = 2;
 
                 if (active) {
                     this.btn_run_rect = null; 
-
                     const bw = (w - padding*2 - 26)/2; 
                     this.btn_cancel_rect = { x: padding+8, y: btnY, w: bw, h: btnH }; 
                     this.btn_continue_rect = { x: padding+bw+18, y: btnY, w: bw, h: btnH };
@@ -245,7 +297,6 @@ app.registerExtension({
                 } else {
                     this.btn_cancel_rect = null; 
                     this.btn_continue_rect = null;
-
                     const bw = w - padding*2 - 16; 
                     this.btn_run_rect = { x: padding+8, y: btnY, w: bw, h: btnH };
                     
@@ -257,11 +308,19 @@ app.registerExtension({
                     drawCleanNeonRect(ctx, padding+8, btnY + off, bw, btnH, 15, col, isPr ? 0 : (isQueueActive ? 3+Math.sin(Date.now()/200)*2 : 4));
                     drawCleanNeonText(ctx, isQueueActive ? "ADD TO QUEUE" : "RUN GENERATION", padding+8+bw/2, btnY + bH/2 + off + textYOffset, col, 13, true);
                     
-                    if (isQueueActive || isPr) this.setDirtyCanvas(true);
+                    if (isQueueActive || isPr) {
+                        const now = Date.now();
+                        if (now - this.last_draw_time > 50) { 
+                            this.last_draw_time = now;
+                            setTimeout(() => this.setDirtyCanvas(true, false), 10);
+                        }
+                    }
                 }
             };
 
             nodeType.prototype.onMouseDown = function (e, pos) {
+                if (this.flags && this.flags.collapsed) return false;
+
                 const [x, y] = pos;
                 
                 if (this.btn_run_rect && x >= this.btn_run_rect.x && x <= this.btn_run_rect.x + this.btn_run_rect.w && y >= this.btn_run_rect.y && y <= this.btn_run_rect.y + this.btn_run_rect.h) { 
@@ -272,25 +331,22 @@ app.registerExtension({
                 }
                 
                 if (this.toggle_preview_rect && x >= this.toggle_preview_rect.x && x <= this.toggle_preview_rect.x+this.toggle_preview_rect.w && y >= this.toggle_preview_rect.y && y <= this.toggle_preview_rect.y+this.toggle_preview_rect.h) { 
-                    this.properties.show_preview = !this.properties.show_preview; 
+                    this.properties.show_preview = !(this.properties.show_preview ?? true); 
                     this.size[1] = this.properties.show_preview ? 320 : 150; 
                     this.setDirtyCanvas(true);
                     return true; 
                 }
                 
-                // ИСПРАВЛЕНО: добавлена проверка по Y
                 if (this.btn_prev_rect && x >= this.btn_prev_rect.x && x <= this.btn_prev_rect.x+this.btn_prev_rect.w && y >= this.btn_prev_rect.y && y <= this.btn_prev_rect.y+this.btn_prev_rect.h) { 
-                    this.properties.sound_index = (this.properties.sound_index - 1 + available_sounds.length) % available_sounds.length; 
+                    this.properties.sound_index = ((this.properties.sound_index ?? 0) - 1 + available_sounds.length) % available_sounds.length; 
                     this.setDirtyCanvas(true);
                     return true; 
                 }
-                // ИСПРАВЛЕНО: добавлена проверка по Y
                 if (this.btn_next_rect && x >= this.btn_next_rect.x && x <= this.btn_next_rect.x+this.btn_next_rect.w && y >= this.btn_next_rect.y && y <= this.btn_next_rect.y+this.btn_next_rect.h) { 
-                    this.properties.sound_index = (this.properties.sound_index + 1) % available_sounds.length; 
+                    this.properties.sound_index = ((this.properties.sound_index ?? 0) + 1) % available_sounds.length; 
                     this.setDirtyCanvas(true);
                     return true; 
                 }
-                // ИСПРАВЛЕНО: добавлена проверка по Y
                 for (let b of (this.vol_bars_rects || [])) { 
                     if (x >= b.x && x <= b.x+b.w && y >= b.y && y <= b.y+b.h) { 
                         this.properties.volume_index = b.idx; 
@@ -304,6 +360,11 @@ app.registerExtension({
                         if (x >= r.x && x <= r.x+r.w && y >= r.y && y <= r.y+r.h) { 
                             if (this.neo_selected.has(r.idx)) this.neo_selected.delete(r.idx); 
                             else this.neo_selected.add(r.idx); 
+                            
+                            // Сохраняем выбор в нативный properties, чтобы не слетело при смене вкладки!
+                            if (this.properties.neo_chooser_state) {
+                                this.properties.neo_chooser_state.selected = Array.from(this.neo_selected);
+                            }
                             this.setDirtyCanvas(true);
                             return true; 
                         } 
