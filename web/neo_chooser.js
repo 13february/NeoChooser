@@ -84,34 +84,25 @@ app.registerExtension({
     async setup() {
         await ensureSoundsLoaded();
 
-        const resetAllChoosers = () => {
-            app.graph._nodes.forEach(n => {
-                if (n.type === "NeoChooser") {
-                    n.properties.neo_chooser_state = null; // Подчищаем следы
-                    n.is_paused = false;
-                    n.neo_images = [];
-                    n.setDirtyCanvas(true);
-                }
-            });
-        };
-
-        // Сбрасываем старые состояния только при старте новой генерации или ошибке
+        // Оставляем только косметическое обновление флага isQueueActive для кнопки RUN
         api.addEventListener("execution_start", () => { 
             isQueueActive = true; 
-            resetAllChoosers(); 
+            app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
         });
         
-        api.addEventListener("execution_interrupted", () => { isQueueActive = false; resetAllChoosers(); }); 
-        api.addEventListener("execution_error", () => { isQueueActive = false; resetAllChoosers(); });
+        api.addEventListener("execution_interrupted", () => { 
+            isQueueActive = false; 
+            app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
+        }); 
+        
+        api.addEventListener("execution_error", () => { 
+            isQueueActive = false; 
+            app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
+        });
         
         api.addEventListener("executing", ({ detail }) => { 
-            if (detail === null) {
-                isQueueActive = false; 
-                app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); });
-            } else { 
-                isQueueActive = true; 
-                app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
-            } 
+            isQueueActive = (detail !== null);
+            app.graph._nodes.forEach(n => { if(n.type === "NeoChooser") n.setDirtyCanvas(true); }); 
         });
 
         api.addEventListener("neo_chooser_show", (e) => {
@@ -119,20 +110,13 @@ app.registerExtension({
             const n = app.graph.getNodeById(e.detail.node_id); 
             if (!n) return;
 
-            // Нативно сохраняем статус в properties ноды (переживет любые вкладки)
+            // Нативно сохраняем статус прямо в ноду
             n.properties.neo_chooser_state = {
                 is_paused: true,
                 images: e.detail.images,
-                selected: e.detail.images.length === 1 ? [0] : []
+                selected: e.detail.images.length === 1 ? [0] : [],
+                soundPlayed: false
             };
-
-            const sIdx = n.properties.sound_index ?? 0;
-            const vIdx = n.properties.volume_index ?? 5;
-            if (sIdx > 0 && available_sounds.length > 1 && vIdx > 0) {
-                const a = new Audio(`/extensions/NeoChooser/sounds/${available_sounds[sIdx]}`);
-                a.volume = vIdx / 10; 
-                a.play().catch(()=>{});
-            }
 
             n.restoreStateFromProperties();
         });
@@ -147,7 +131,7 @@ app.registerExtension({
                 this.properties.sound_index = this.properties.sound_index ?? 0;
                 this.properties.volume_index = this.properties.volume_index ?? 5;
                 this.properties.show_preview = this.properties.show_preview ?? true;
-                this.properties.neo_chooser_state = null; // Контейнер для сериализации паузы
+                this.properties.neo_chooser_state = null; 
                 
                 this.size = [350, 320]; 
                 this.is_paused = false; 
@@ -159,7 +143,7 @@ app.registerExtension({
                 ensureSoundsLoaded(this); 
             };
 
-            // Метод восстановления из нативного JSON ComfyUI
+            // Восстановление из нативного свойства ComfyUI
             nodeType.prototype.restoreStateFromProperties = function() {
                 const state = this.properties.neo_chooser_state;
                 if (!state || !state.is_paused) {
@@ -172,6 +156,17 @@ app.registerExtension({
                 this.neo_selected = new Set(state.selected || []);
                 this.neo_images = [];
 
+                const sIdx = this.properties.sound_index ?? 0;
+                const vIdx = this.properties.volume_index ?? 5;
+
+                // Звук играет только если еще не проигрывался в этом стейте
+                if (!state.soundPlayed && sIdx > 0 && available_sounds.length > 1 && vIdx > 0) {
+                    const a = new Audio(`/extensions/NeoChooser/sounds/${available_sounds[sIdx]}`);
+                    a.volume = vIdx / 10; 
+                    a.play().catch(()=>{});
+                    state.soundPlayed = true; 
+                }
+
                 state.images.forEach((img, i) => {
                     const obj = new Image();
                     obj.onload = () => this.setDirtyCanvas(true);
@@ -182,7 +177,7 @@ app.registerExtension({
                 this.setDirtyCanvas(true);
             };
 
-            // Хук ComfyUI: срабатывает при загрузке графа и возврате на вкладку
+            // Срабатывает при загрузке графа и возврате на вкладку
             const onConfigure = nodeType.prototype.onConfigure;
             nodeType.prototype.onConfigure = function (info) {
                 if (onConfigure) onConfigure.apply(this, arguments);
@@ -192,7 +187,10 @@ app.registerExtension({
             nodeType.prototype.sendReply = async function(action) {
                 this.is_paused = false; 
                 const selectedArr = Array.from(this.neo_selected);
-                this.properties.neo_chooser_state = null; // Очищаем статус после выбора
+                
+                // Очищаем статус только когда реально ответили серверу
+                this.properties.neo_chooser_state = null; 
+                this.neo_images = [];
                 
                 if (action === "cancel") api.interrupt();
                 await api.fetchApi("/neo_chooser/reply", { 
@@ -361,7 +359,6 @@ app.registerExtension({
                             if (this.neo_selected.has(r.idx)) this.neo_selected.delete(r.idx); 
                             else this.neo_selected.add(r.idx); 
                             
-                            // Сохраняем выбор в нативный properties, чтобы не слетело при смене вкладки!
                             if (this.properties.neo_chooser_state) {
                                 this.properties.neo_chooser_state.selected = Array.from(this.neo_selected);
                             }
